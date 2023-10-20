@@ -1,247 +1,418 @@
-// Define the game difficulties and their respective settings.
 const difficulties = {
-  easy: { rows: 2, cols: 2, totalCards: 4, duration: 2 * 60 },
-  medium: { rows: 4, cols: 5, totalCards: 20, duration: 4 * 60 },
-  hard: { rows: 5, cols: 6, totalCards: 30, duration: 6 * 60 },
+    easy: { rows: 4, cols: 4, totalCards: 16, duration: 60 },
+    medium: { rows: 4, cols: 5, totalCards: 20, duration: 75 },
+    hard: { rows: 5, cols: 6, totalCards: 30, duration: 113 },
 };
 
 let currentDifficulty;
+let savedDifficulty;
 let remainingTime;
-let images = [];
+let timerInterval;
+let isPaused = false;
 
-// Set the game difficulty to "easy" by default.
-// setDifficulty("hard");
-
-// Function to set the game difficulty.
-function setDifficulty(difficulty) {
-  if (difficulties[difficulty]) {
-    currentDifficulty = difficulties[difficulty];
-    remainingTime = currentDifficulty.duration;
-  } else {
-    console.error("Invalid difficulty level provided.");
-  }
-}
-
-// Function to adjust the game grid columns based on the viewport width.
-function adjustGridColumns() {
-  const gameBoard = document.getElementById("gameBoard");
-  const viewportWidth = window.innerWidth;
-
-  if (currentDifficulty) {
-    if (viewportWidth <= 680) {
-      gameBoard.style.gridTemplateColumns = `repeat(2, 1fr)`;
-    } else if (viewportWidth <= 900) {
-      gameBoard.style.gridTemplateColumns = `repeat(3, 1fr)`;
-    } else {
-      // Calculate the number of columns based on the current difficulty
-      const numColumns = currentDifficulty.cols;
-      gameBoard.style.gridTemplateColumns = `repeat(${numColumns}, 1fr)`;
-    }
-  }
-}
-
-// Event listener to run the game logic once the DOM is fully loaded.
 document.addEventListener("DOMContentLoaded", function () {
-  const gameBoard = document.getElementById("gameBoard");
-  const timerElement = document.getElementById("timer");
+    document.addEventListener("startGame", function (event) {
+        const { searchInput, selectedDifficulty } = event.detail;
+        setDifficulty(selectedDifficulty);
+        savedDifficulty = selectedDifficulty;
+        adjustGridColumns();
+        initializeGame(searchInput);
+    });
+    const pauseButton = document.getElementById("pauseButton");
+    pauseButton.addEventListener("click", togglePause);
+});
 
-  // Function to update the game timer.
-  function updateTimer() {
+function setDifficulty(difficulty) {
+    savedDifficulty = difficulty;
+    if (difficulties[difficulty]) {
+        currentDifficulty = difficulties[difficulty];
+        remainingTime = currentDifficulty.duration;
+    } else {
+        console.error("Invalid difficulty level provided.");
+    }
+}
+
+function adjustGridColumns() {
+    const gameBoard = document.getElementById("gameBoard");
+    const viewportWidth = window.innerWidth;
+
+    if (!currentDifficulty) return;
+
+    let numColumns = currentDifficulty.cols;
+    if (viewportWidth <= 680) numColumns = 2;
+    else if (viewportWidth <= 900) numColumns = 3;
+
+    gameBoard.style.gridTemplateColumns = `repeat(${numColumns}, 1fr)`;
+}
+
+function createGameTimer() {
+    const timerContainer = document.getElementById("timer-container");
+    if (!timerContainer) {
+        console.error("Timer container not found.");
+        return;
+    }
+
+    const timerElement = document.createElement("div");
+    timerElement.id = "timer";
+    timerElement.textContent = "Remaining Time: 00:00";
+    timerContainer.appendChild(timerElement);
+
+    timerInterval = setInterval(updateTimer, 1000);
+}
+
+function togglePause() {
+    isPaused = !isPaused;
+    if (isPaused) {
+        clearInterval(timerInterval);
+        document.getElementById("pauseButton").innerText = "Resume Game";
+        saveGameState();
+    } else {
+        timerInterval = setInterval(updateTimer, 1000);
+        document.getElementById("pauseButton").innerText = "Pause Game";
+    }
+}
+
+async function saveGameState() {
+    const user = await getCurrentUser();
+    if (!user) {
+        console.error("No user found. Cannot save game state.");
+        return;
+    }
+
+    const cards = Array.from(document.querySelectorAll(".card"));
+
+    const flippedOrMatchedCardsIndices = cards
+        .filter(
+            (card) =>
+                card.classList.contains("flipped") ||
+                card.classList.contains("matched")
+        )
+        .map((card) => parseInt(card.dataset.imageIndex));
+
+    console.log(
+        "Flipped or Matched Cards Indices:",
+        flippedOrMatchedCardsIndices
+    );
+
+    const gameState = {
+        userId: user._id,
+        remainingTime: remainingTime,
+        flippedCards: flippedOrMatchedCardsIndices,
+        cardOrder: cards.map((card) => ({
+            imageIndex: card.dataset.imageIndex,
+            imageUrl: card.querySelector(".card-back").style.backgroundImage,
+        })),
+        difficulty: savedDifficulty,
+    };
+    console.log(gameState);
+
+    try {
+        const response = await fetch("/api/game/save", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(gameState),
+        });
+
+        if (!response.ok) {
+            throw new Error("Failed to save game state to backend");
+        }
+    } catch (error) {
+        console.error(error);
+    }
+}
+
+async function loadGameState() {
+    console.log("start");
+    const user = await getCurrentUser();
+    if (!user) {
+        console.error("No user found. Cannot load game state.");
+        return;
+    }
+
+    const userId = user._id;
+    try {
+        const response = await fetch(`/api/game/load/${userId}`);
+        if (!response.ok) {
+            throw new Error("Failed to load game state from backend");
+        }
+
+        const savedState = await response.json();
+        setDifficulty(savedState.difficulty);
+        remainingTime = savedState.remainingTime;
+        const gameBoard = document.getElementById("gameBoard");
+
+        // Clear the current game board
+        while (gameBoard.firstChild) {
+            gameBoard.removeChild(gameBoard.firstChild);
+        }
+
+        // Restore card order and flipped state
+        savedState.cardOrder.forEach((cardData) => {
+            const card = document.createElement("div");
+            card.classList.add("card");
+            card.dataset.imageIndex = cardData.imageIndex;
+
+            const cardFront = document.createElement("div");
+            cardFront.classList.add("card-back");
+            cardFront.style.backgroundImage = cardData.imageUrl;
+
+            const cardBack = document.createElement("div");
+            cardBack.classList.add("card-front");
+            cardBack.style.backgroundImage =
+                "url('https://cdn.pixabay.com/photo/2015/04/23/17/41/javascript-736401_960_720.png')";
+
+            card.appendChild(cardFront);
+            card.appendChild(cardBack);
+            card.addEventListener("click", handleCardClick);
+            gameBoard.appendChild(card);
+
+            // Check if the card was flipped and restore its state
+            if (savedState.flippedCards.includes(cardData.imageIndex)) {
+                card.classList.add("flipped");
+                console.log(savedState.flippedCards);
+            }
+        });
+
+        adjustGridColumns();
+        createGameTimer();
+        document.getElementById("game-page").style.display = "flex";
+        isPaused = false;
+        document.querySelector("#pause").style.display = "block";
+    } catch (error) {
+        console.error(error);
+    }
+}
+
+function updateTimer() {
+    if (isPaused) return;
     remainingTime--;
     const minutes = Math.floor(remainingTime / 60);
     const seconds = remainingTime % 60;
 
-    timerElement.textContent =
-      "Remaining Time: " +
-      (minutes < 10 ? "0" + minutes : minutes) +
-      ":" +
-      (seconds < 10 ? "0" + seconds : seconds);
+    const timerElement = document.getElementById("timer");
+    timerElement.textContent = `Remaining Time: ${String(minutes).padStart(
+        2,
+        "0"
+    )}:${String(seconds).padStart(2, "0")}`;
 
-    // Stop the timer when the remaining time reaches zero.
     if (remainingTime <= 0) {
-      clearInterval(timerInterval);
-      gameEnd();
+        clearInterval(timerInterval);
+        gameEnd();
     }
-  }
-
-  // Event listener to run the game logic when the form is submitted.
-  document.addEventListener("startGame", function (event) {
-    const { searchInput, selectedDifficulty } = event.detail;
-    console.log("Received search input in game-page.js:", searchInput);
-    console.log(
-      "Received difficulty level in game-page.js:",
-      selectedDifficulty
-    );
-
-    // You can now use the search input to initialize the game
-    setDifficulty(selectedDifficulty);
-    adjustGridColumns();
-    initializeGame(searchInput);
-  });
-
-  // Start the game timer.
-  const timerInterval = setInterval(updateTimer, 1000);
-});
-
-// Function to fetch a random image from the server based on user prompt
-async function fetchRandomImage(userPrompt) {
-  try {
-    const response = await fetch("/api/pixabay/create", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ prompt: userPrompt }),
-    });
-
-    if (!response.ok) {
-      throw new Error("Failed to fetch image");
-    }
-
-    const data = await response.json();
-
-    return data.imageUrl;
-  } catch (error) {
-    console.error("Error fetching image:", error);
-    return "";
-  }
 }
 
-async function initializeGame(userPrompt) {
-  const cardCount = currentDifficulty.totalCards;
-  const uniqueImageCount = cardCount / 2;
+async function fetchRandomImage(userPrompt) {
+    try {
+        const response = await fetch("/api/pixabay/create", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ prompt: userPrompt }),
+        });
 
-  try {
-    // Fetch unique images for the game
-    const uniqueImages = await fetchUniqueImages(userPrompt, uniqueImageCount);
+        if (!response.ok) throw new Error("Failed to fetch image");
 
-    if (!uniqueImages || uniqueImages.length < uniqueImageCount) {
-      console.error("Not enough unique images fetched.");
-      return;
+        const data = await response.json();
+        return data.imageUrl;
+    } catch (error) {
+        console.error("Error fetching image:", error);
+        return "";
     }
-
-    // Duplicate and shuffle the unique image URLs
-    const shuffledImages = shuffleArray([...uniqueImages, ...uniqueImages]);
-
-    // Generate the game cards with shuffled images
-    for (let i = 0; i < cardCount; i++) {
-      const card = document.createElement("div");
-      card.classList.add("card");
-      card.dataset.imageIndex = i;
-
-      const cardFront = document.createElement("div");
-      cardFront.classList.add("card-back");
-      cardFront.style.backgroundImage = `url('${shuffledImages[i]}')`;
-
-      const cardBack = document.createElement("div");
-      cardBack.classList.add("card-front");
-      cardBack.style.backgroundImage =
-        "url('https://cdn.pixabay.com/photo/2015/04/23/17/41/javascript-736401_960_720.png')"; // Add a placeholder image URL here
-
-      card.appendChild(cardFront);
-      card.appendChild(cardBack);
-
-      card.addEventListener("click", handleCardClick);
-      gameBoard.appendChild(card);
-    }
-  } catch (error) {
-    console.error("Error initializing the game:", error);
-  }
 }
 
 async function fetchUniqueImages(userPrompt, count) {
-  const uniqueImages = [];
-  while (uniqueImages.length < count) {
-    const imageUrl = await fetchRandomImage(userPrompt);
-    if (!uniqueImages.includes(imageUrl)) {
-      uniqueImages.push(imageUrl);
+    const uniqueImages = [];
+    while (uniqueImages.length < count) {
+        const imageUrl = await fetchRandomImage(userPrompt);
+        if (!uniqueImages.includes(imageUrl)) uniqueImages.push(imageUrl);
     }
-  }
-  return uniqueImages;
+    return uniqueImages;
 }
 
-// Shuffle the array randomly
 function shuffleArray(array) {
-  for (let i = array.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [array[i], array[j]] = [array[j], array[i]];
-  }
-  return array;
+    for (let i = array.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [array[i], array[j]] = [array[j], array[i]];
+    }
+    return array;
 }
 
 function handleCardClick(event) {
-  const card = event.currentTarget;
+    if (isPaused) return;
+    const card = event.currentTarget;
+    if (
+        !card.classList.contains("flipped") &&
+        document.querySelectorAll(".card.flipped").length < 2
+    ) {
+        card.classList.add("flipped");
+    }
 
-  if (
-    !card.classList.contains("flipped") &&
-    document.querySelectorAll(".card.flipped").length < 2
-  ) {
-    card.classList.add("flipped");
-    console.log("Card flipped:", card);
-  }
-
-  if (document.querySelectorAll(".card.flipped").length === 2) {
-    setTimeout(compareCards, 1000);
-  }
+    if (document.querySelectorAll(".card.flipped").length === 2) {
+        setTimeout(compareCards, 1000);
+    }
 }
 
-// Compare two flipped cards to check if they match
 function compareCards() {
-  const flippedCards = document.querySelectorAll(".card.flipped");
-  if (flippedCards.length === 2) {
+    const flippedCards = Array.from(document.querySelectorAll(".card.flipped"));
+    if (flippedCards.length !== 2) return;
+
     const [card1, card2] = flippedCards;
     const image1 = card1.querySelector(".card-back").style.backgroundImage;
     const image2 = card2.querySelector(".card-back").style.backgroundImage;
-    console.log("Card images:", image1, image2);
 
     if (image1 === image2) {
-      // Cards match, they stay flipped
-      card1.classList.remove("flipped");
-      card1.classList.add("matched");
-      console.log(card1.classList);
-      card2.classList.remove("flipped");
-      card2.classList.add("matched");
-      console.log(card2.classList);
+        card1.classList.replace("flipped", "matched");
+        card2.classList.replace("flipped", "matched");
     } else {
-      // Cards don't match, flip them back.
-      setTimeout(() => {
-        card1.classList.remove("flipped");
-        card2.classList.remove("flipped");
-      }, 500); // Adjust the time (in milliseconds) to show unmatched cards.
+        setTimeout(() => {
+            card1.classList.remove("flipped");
+            card2.classList.remove("flipped");
+        }, 500);
     }
 
     checkGameEnd();
-  }
 }
 
-// Implement game ending logic when all card pairs are matched
 function checkGameEnd() {
-  const matchedCards = document.querySelectorAll(".card.matched");
-  if (matchedCards.length === currentDifficulty.totalCards) {
-    // Game end logic
-    console.log("Game end");
-    gameEnd();
-  }
+    if (
+        document.querySelectorAll(".card.matched").length ===
+        currentDifficulty.totalCards
+    ) {
+        gameEnd();
+    }
 }
 
-function gameEnd() {
-  // Calculate the points scored based on the remaining time
-  const points = remainingTime * 100;
+async function saveScoreToBackend(username, points, difficulty, time) {
+    try {
+        const response = await fetch("/api/scores/save", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ username, score: points, difficulty, time }),
+        });
 
-  // Display the points earned to the player
-  const gameContainer = document.getElementById("game-container");
+        if (!response.ok) throw new Error("Failed to save score");
 
-  // Create a message to inform the player about the game end
-  const endMessage = document.createElement("div");
-  endMessage.classList.add("end-message");
-  endMessage.textContent = `Game Over! You scored ${points} points.`;
+        console.log("Score saved successfully");
+    } catch (error) {
+        console.error("Error saving the score:", error);
+    }
+}
 
-  // Hide the game page, game board, and timer element
-  document.getElementById("game-page").style.display = "none";
-  document.getElementById("gameBoard").style.display = "none";
-  document.getElementById("timer").style.display = "none";
+async function getCurrentUser() {
+    const token = localStorage.getItem("token");
+    if (!token) return null;
 
-  // Append the end message and then render the scoreboard
-  gameContainer.appendChild(endMessage);
-  renderScoreboard();
+    try {
+        const response = await fetch("/api/users/profile", {
+            method: "GET",
+            headers: {
+                "Content-Type": "application/json",
+                "x-auth-token": token,
+            },
+        });
+
+        if (response.status !== 200) return null;
+
+        return await response.json();
+    } catch (error) {
+        console.error("Error fetching user profile:", error);
+        return null;
+    }
+}
+
+async function gameEnd() {
+    const gameBoard = document.getElementById("gameBoard");
+    while (gameBoard.firstChild) gameBoard.removeChild(gameBoard.firstChild);
+
+    const points = remainingTime * 100;
+    const user = await getCurrentUser();
+    const username = user ? user.username : "ErrorUsername";
+    const difficultyString = Object.keys(difficulties).find(
+        (key) => difficulties[key] === currentDifficulty
+    );
+    const timeString = `${Math.floor(remainingTime / 60)}m ${
+        remainingTime % 60
+    }s`;
+    isPaused = false;
+
+    await saveScoreToBackend(username, points, difficultyString, timeString);
+
+    const timerElement = document.getElementById("timer");
+    if (timerElement) {
+        timerElement.remove();
+        clearInterval(timerInterval);
+    }
+
+    const gameContainer = document.getElementById("game-container");
+    const endMessage = document.createElement("div");
+    endMessage.classList.add("end-message");
+    endMessage.textContent = `Game Over! You scored ${points} points.`;
+
+    document.getElementById("game-page").style.display = "none";
+    document.getElementById("game_menu_difficulty").style.display = "none";
+    document.getElementById("difficulty-options").style.display = "";
+    document.getElementById("difficulty-buttons").style.display = "";
+    document.getElementById("search-criteria").style.display = "none";
+    document.getElementById("search-input").value = "";
+    document.querySelector("#pause").style.display = "none";
+
+    gameContainer.appendChild(endMessage);
+    renderScoreboard();
+    deleteSavedGame();
+}
+
+async function initializeGame(userPrompt) {
+    const cardCount = currentDifficulty.totalCards;
+    const uniqueImageCount = cardCount / 2;
+
+    const uniqueImages = await fetchUniqueImages(userPrompt, uniqueImageCount);
+    if (!uniqueImages || uniqueImages.length < uniqueImageCount) {
+        console.error("Not enough unique images fetched.");
+        return;
+    }
+
+    const shuffledImages = shuffleArray([...uniqueImages, ...uniqueImages]);
+    const gameBoard = document.getElementById("gameBoard");
+
+    shuffledImages.forEach((image, i) => {
+        const card = document.createElement("div");
+        card.classList.add("card");
+        card.dataset.imageIndex = i;
+
+        const cardFront = document.createElement("div");
+        cardFront.classList.add("card-back");
+        cardFront.style.backgroundImage = `url('${image}')`;
+
+        const cardBack = document.createElement("div");
+        cardBack.classList.add("card-front");
+        cardBack.style.backgroundImage =
+            "url('https://cdn.pixabay.com/photo/2015/04/23/17/41/javascript-736401_960_720.png')";
+
+        card.appendChild(cardFront);
+        card.appendChild(cardBack);
+        card.addEventListener("click", handleCardClick);
+        gameBoard.appendChild(card);
+    });
+    // Display the "Pause" button
+    document.querySelector("#pause").style.display = "block";
+
+    createGameTimer();
+}
+async function deleteSavedGame() {
+    const user = await getCurrentUser();
+    if (!user) {
+        console.error("No user found. Cannot delete game state.");
+        return;
+    }
+
+    try {
+        const response = await fetch(`/api/game/delete/${user._id}`, {
+            method: "DELETE",
+        });
+
+        if (!response.ok) {
+            throw new Error("Failed to delete game state from backend");
+        }
+    } catch (error) {
+        console.error(error);
+    }
 }

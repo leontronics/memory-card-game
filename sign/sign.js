@@ -23,12 +23,21 @@ function toggleForm(event) {
 }
 
 // Function to handle successful login or signup
-function handleSuccessfulAuth() {
+function handleSuccessfulAuth(username) {
     // Hide the sign-in/sign-up section
     document.querySelector(".sign-section").style.display = "none";
 
+    displayResumeButtonIfGameExists();
+    animateButtons();
     // Show the game menu
     document.querySelector(".game_menu").style.display = "flex";
+
+    // Display the username in the welcome message
+    document.getElementById("welcome-message").textContent =
+        "Welcome, " + username + "!";
+
+    // Display the "Logout" button
+    document.querySelector(".user-info").style.display = "block";
 }
 
 // Function to handle user registration
@@ -55,7 +64,7 @@ async function handleUserRegistration(event) {
             document.getElementById("signupMessage").classList.add("success");
             setTimeout(() => {
                 toggleForm(event);
-            }, 1750);
+            }, 1000);
         } else {
             document.getElementById("signupMessage").textContent = data.message;
         }
@@ -85,12 +94,15 @@ async function handleUserLogin(event) {
         const data = await response.json();
 
         if (response.status === 200) {
+            localStorage.setItem("username", username);
+            localStorage.setItem("token", data.token);
+            localStorage.setItem("userId", data.userId);
             document.getElementById("signinMessage").textContent =
                 "Logged in successfully.";
             document.getElementById("signinMessage").classList.add("success");
             setTimeout(() => {
-                handleSuccessfulAuth();
-            }, 1750);
+                handleSuccessfulAuth(username);
+            }, 1000);
         } else {
             document.getElementById("signinMessage").textContent = data.message;
         }
@@ -116,3 +128,49 @@ document
 document
     .querySelector(".signinBox form")
     .addEventListener("submit", handleUserLogin);
+
+// Function to handle the logout action
+function logout() {
+    // clear the userid and token from local storage
+    localStorage.removeItem("userId");
+    localStorage.removeItem("token");
+    localStorage.removeItem("username");
+    location.reload();
+}
+
+// Add an event listener to the logout button
+document.getElementById("logout-button").addEventListener("click", logout);
+
+// Check loggedIn
+
+async function checkLoggedIn() {
+    try {
+        document.querySelector(".sign-section").style.display = "none";
+        document.querySelector(".game_menu").style.display = "none";
+        document.querySelector(".user-info").style.display = "none";
+
+        const response = await fetch("/api/users/checkSession", {
+            method: "GET",
+            headers: {
+                "x-auth-token": localStorage.getItem("token"),
+            },
+        });
+
+        if (response.status === 200) {
+            const data = await response.json();
+            const { username } = data;
+            document.querySelector(".game_menu").style.display = "flex";
+            document.querySelector(".user-info").style.display = "block";
+            document.getElementById("welcome-message").textContent =
+                "Welcome, " + username + "!";
+        } else {
+            document.querySelector(".sign-section").style.display = "flex";
+        }
+    } catch (error) {
+        console.error(error);
+    }
+}
+
+document.addEventListener("DOMContentLoaded", function () {
+    checkLoggedIn();
+});
