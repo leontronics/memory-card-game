@@ -20,7 +20,12 @@ const app = express();
 
 // Middleware configurations
 app.use(bodyParser.json());
-app.use(cors());
+app.use(
+    cors({
+        origin: "https://memory-card-game-wc98.onrender.com",
+        credentials: true,
+    })
+);
 app.use(express.static(path.join(__dirname, "../Frontend")));
 
 // Routes

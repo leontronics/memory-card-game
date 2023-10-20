@@ -107,11 +107,14 @@ async function saveGameState() {
     console.log(gameState);
 
     try {
-        const response = await fetch("/api/game/save", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(gameState),
-        });
+        const response = await fetch(
+            "https://memory-card-gamenode.onrender.com/api/game/save",
+            {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(gameState),
+            }
+        );
 
         if (!response.ok) {
             throw new Error("Failed to save game state to backend");
@@ -131,7 +134,9 @@ async function loadGameState() {
 
     const userId = user._id;
     try {
-        const response = await fetch(`/api/game/load/${userId}`);
+        const response = await fetch(
+            `https://memory-card-gamenode.onrender.com/api/game/load/${userId}`
+        );
         if (!response.ok) {
             throw new Error("Failed to load game state from backend");
         }
@@ -203,11 +208,14 @@ function updateTimer() {
 
 async function fetchRandomImage(userPrompt) {
     try {
-        const response = await fetch("/api/pixabay/create", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ prompt: userPrompt }),
-        });
+        const response = await fetch(
+            "https://memory-card-gamenode.onrender.com/api/pixabay/create",
+            {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ prompt: userPrompt }),
+            }
+        );
 
         if (!response.ok) throw new Error("Failed to fetch image");
 
@@ -283,11 +291,19 @@ function checkGameEnd() {
 
 async function saveScoreToBackend(username, points, difficulty, time) {
     try {
-        const response = await fetch("/api/scores/save", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ username, score: points, difficulty, time }),
-        });
+        const response = await fetch(
+            "https://memory-card-gamenode.onrender.com/api/scores/save",
+            {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    username,
+                    score: points,
+                    difficulty,
+                    time,
+                }),
+            }
+        );
 
         if (!response.ok) throw new Error("Failed to save score");
 
@@ -302,13 +318,16 @@ async function getCurrentUser() {
     if (!token) return null;
 
     try {
-        const response = await fetch("/api/users/profile", {
-            method: "GET",
-            headers: {
-                "Content-Type": "application/json",
-                "x-auth-token": token,
-            },
-        });
+        const response = await fetch(
+            "https://memory-card-gamenode.onrender.com/api/users/profile",
+            {
+                method: "GET",
+                headers: {
+                    "Content-Type": "application/json",
+                    "x-auth-token": token,
+                },
+            }
+        );
 
         if (response.status !== 200) return null;
 
@@ -405,9 +424,12 @@ async function deleteSavedGame() {
     }
 
     try {
-        const response = await fetch(`/api/game/delete/${user._id}`, {
-            method: "DELETE",
-        });
+        const response = await fetch(
+            `https://memory-card-gamenode.onrender.com/api/game/delete/${user._id}`,
+            {
+                method: "DELETE",
+            }
+        );
 
         if (!response.ok) {
             throw new Error("Failed to delete game state from backend");

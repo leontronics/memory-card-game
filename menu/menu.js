@@ -7,7 +7,9 @@ displayResumeButtonIfGameExists();
 
 async function checkForSavedGame(userId) {
     try {
-        const response = await fetch(`/api/game/load/${userId}`);
+        const response = await fetch(
+            `https://memory-card-gamenode.onrender.com/api/game/load/${userId}`
+        );
         if (response.ok) {
             const gameState = await response.json();
             return !!gameState; // Returns true if gameState exists, false otherwise
@@ -163,7 +165,9 @@ async function populateScoreboard() {
 }
 
 async function fetchScores() {
-    const response = await fetch("/api/scores/all");
+    const response = await fetch(
+        "https://memory-card-gamenode.onrender.com/api/scores/all"
+    );
     if (!response.ok) {
         throw new Error("Failed to fetch scores");
     }
@@ -328,13 +332,16 @@ async function getCurrentUser() {
     if (!token) return null;
 
     try {
-        const response = await fetch("/api/users/profile", {
-            method: "GET",
-            headers: {
-                "Content-Type": "application/json",
-                "x-auth-token": token,
-            },
-        });
+        const response = await fetch(
+            "https://memory-card-gamenode.onrender.com/api/users/profile",
+            {
+                method: "GET",
+                headers: {
+                    "Content-Type": "application/json",
+                    "x-auth-token": token,
+                },
+            }
+        );
 
         if (response.status !== 200) return null;
 
